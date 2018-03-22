@@ -1,0 +1,20 @@
+{
+  "name": "sensorjs-dq1000v",
+  "version": "0.0.1",
+  "description": "The sensorjs plugin for Dotech DQ-1000V",
+  "main": "index.js",
+  "scripts": {
+    "test": "mocha"
+  },
+  "author": "bohemian@daliworks.net",
+  "license": "MIT",
+  "dependencies": {
+    "async": "^1.5.2",
+    "lodash": "^2.4.2",
+    "modbus-tcp": "^0.4.12"
+  },
+  "devDependencies": {
+    "chai": "^3.5.0",
+    "mocha": "^3.2.0"
+  }
+}
