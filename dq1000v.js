@@ -4,128 +4,149 @@ var net = require('net');
 var util = require('util');
 var _ = require('lodash');
 var async = require('async');
-var modbus = require('modbus-serial');
 var EventEmitter = require('events').EventEmitter;
-
+var Master = require('./dq1000vMaster');
 var logger = require('./index').Sensor.getLogger('Sensor');
 
-var MODBUS_UNIT_ID = 1;
-var RETRY_OPEN_INTERVAL = 3000; // 3sec
-
-function isInvalid() {
-  return false;
+function  TemperatureConverter(value) {
+  return  value;
 }
 
-// client: modbus client
-// registerAddress: register address from 40000
-// bufferReadFunc: read function name of Buffer object
-// cb: function (err, value)
-function readValue(task, done) {
-  var client = task.client;
-  var registerAddress = task.registerAddress;
-  var bufferReadFunc = task.bufferReadFunc;
-  var cb = task.cb;
-  var from = registerAddress - 40001;
-  var to = from + 1;
-
-  logger.debug('readValue() registerAddress:', registerAddress);
-  client.readHoldingRegisters(MODBUS_UNIT_ID, from, to, function readCb(err, data) {
-    var buffer = new Buffer(4);
-    var value;
-    var badDataErr;
-
-    if (err) {
-      logger.error('modbus-tcp.readHoldingRegisters() Error:', err);
-
-      if (cb) {
-        cb(err);
-      }
-
-      return done && done(err);
-    }
-
-    if (data.length < 2 || !Buffer.isBuffer(data[0]) || !Buffer.isBuffer(data[1])) {
-      logger.error('modbus-tcp.readHoldingRegisters() Error: bad data format');
-      badDataErr = new Error('Bad data:', data);
-
-      if (cb) {
-        cb(badDataErr);
-      }
-
-      return done && done(badDataErr);
-    }
-
-    data[0].copy(buffer, 0);
-    data[1].copy(buffer, 2);
-
-    logger.debug('data:', data);
-
-    value = buffer[bufferReadFunc](0) || 0;
-
-    logger.debug('Converted value:', value, registerAddress);
-
-    if (cb) {
-      cb(null, value);
-    }
-
-    return done && done();
-  });
-}
-
-function DQ1000V () {
+function DQ1000V (deviceID) {
   var self = this;
 
   EventEmitter.call(self);
 
-  self.sockets = [];
-  self.clients = [];
-  self.callbacks = [];
-  self.connecting = false;
-  self.dataRequestQueue = async.queue(readValue);
-  self.dataRequestQueue.drain = function () {
-    logger.debug('All the tasks have been done.');
+  self.parent = Master;
+  self.deviceID = deviceID;
+  self.run = false;
+  self.interval = 10000;
+  self.addressSet = [
+    {
+      address: 10001,
+      count: 100
+    },
+    {
+      address: 30001,
+      count: 2
+    },
+    {
+      address: 40001,
+      count: 2
+    }
+  ];
+
+  self.sensors = {
+    alarm:              { value: undefined, registered: false, address: 10100, type: 'readUInt16BE', converter: undefined},
+    blower:             { value: undefined, registered: false, address: 10007, type: 'readUInt16BE', converter: undefined},
+    cooling:            { value: undefined, registered: false, address: 10050, type: 'readUInt32BE', converter: undefined},
+    dehumidification:   { value: undefined, registered: false, address: 10051, type: 'readUInt32BE', converter: undefined},
+    heating:            { value: undefined, registered: false, address: 10052, type: 'readUInt16BE', converter: undefined},
+    humidification:     { value: undefined, registered: false, address: 10053, type: 'readUInt16BE', converter: undefined},
+    temperature:        { value: undefined, registered: false, address: 30001, type: 'readInt16BE',  converter: TemperatureConverter},
+    humidity:           { value: undefined, registered: false, address: 30002, type: 'readUInt16BE', converter: undefined},
+    setTemperature:     { value: undefined, registered: false, address: 40001, type: 'readInt16BE',  converter: TemperatureConverter},
+    setHumidity:        { value: undefined, registered: false, address: 40002, type: 'readUInt16BE', converter: undefined}
   };
+
+  self.actuators={
+    demandReset:    { value: undefined, registered: false, address: 40120, type: 'readUInt16BE', writeType: 'writeUInt16BE', converter: undefined }  
+  };
+
+  self.on('done', function (startAddress, count, data) {
+    function setValue (item) {
+      if (startAddress < 30000) {
+        var offset = (item.address - startAddress);
+        if (data.data[offset] == true) {
+          item.value = 'on';
+        }
+        else {
+          item.value = 'off';
+        }
+      }
+      else{
+        if (startAddress <= item.address && item.address < startAddress + count * 2) {
+          var offset = (item.address - startAddress) * 2;
+          if (item.converter != undefined) {
+            item.value = item.converter(data.buffer[item.type](offset) || 0);
+          }
+          else {
+            item.value = (data.buffer[item.type](offset) || 0);
+          }
+        }
+      }
+    };
+
+    setValue(self.sensors.alarm);
+    setValue(self.sensors.blower);
+    setValue(self.sensors.cooling);
+    setValue(self.sensors.dehumidification);
+    setValue(self.sensors.heating);
+    setValue(self.sensors.humidification);
+    setValue(self.sensors.temperature);
+    setValue(self.sensors.humidity);
+    setValue(self.sensors.setTemperature);
+    setValue(self.sensors.setHumidity);
+  });
+
+  self.on('setTemperature', function (cb) {
+    var field = 'setTemperature';
+
+    if (self.actuators[field] != undefined) {
+      var registers = [];
+      logger.trace('Set Temperature: ', field);
+
+      registers[0] = new Buffer(4);
+      registers[0][self.actuators[field].writeType](0, 0);
+      registers[0][self.actuators[field].writeType](0, 2);
+      self.parent.setValue(self.actuators[field].address, 1, registers, cb);
+    }
+  });
 }
 
 util.inherits(DQ1000V, EventEmitter);
 
-// address: {IP}:{port}
-// registerInfo: [{register address}, {buffer read function}]
-// cb: function (err, value)
-DQ1000V.prototype.getValue = function (address, regObj, cb) {
+function Create_(deviceID) {
+  var dq1000v = Master.getInstance(deviceID);
+  if (dq1000v == undefined) {
+    dq1000v = new DQ1000V(deviceID);
+    logger.trace('DQ1000V(', deviceID, ') is created.');
+    Master.addInstance(dq1000v);
+  }
+
+  return  dq1000v;
+}
+
+DQ1000V.prototype.register = function(endpoint) {
   var self = this;
-  var registerAddress;
-  var bufferReadFunc;
-  var addressTokens;
-  var deviceAddress;
-  var devicePort;
-  var client;
-  var socket;
-  var callbackArgs = {};
 
-  logger.debug('Called getValue():', address, regObj);
+  if (self.sensors[endpoint.field] != undefined) {
+    self.sensors[endpoint.field].registered = true;
+    self.parent.run();
+  }
+  else if (self.actuators[endpoint.field] != undefined) {
+    self.actuators[endpoint.field].registered = true;
+  }
+  else{
+    logger.error('Undefined base field tried to register : ', endpoint.field);
+  }
+}
 
-  if (!regObj) {
-    return cb && cb(new Error('No register information'));
+DQ1000V.prototype.getValue = function (endpoint) {
+  var self = this;
+
+  if (self.sensors[endpoint.field] != undefined) {
+    return  self.sensors[endpoint.field].value;
+  }
+  else if (self.actuators[endpoint.field] != undefined) {
+    return  self.actuators[endpoint.field].value;
   }
 
-  /*
-  if (!isValidAddress(address)) {
-    return cb && cb(new Error('Bad device address:', address));
-  }
-  */
+  logger.error('Tried to get value of undefined field : ', endpoint.field);
+  return  undefined;
+}
 
-  registerAddress = regObj[0];
-  bufferReadFunc = regObj[1];
-
-  self.clients[address] = client = new modbus();
-
-  client.connectRTU('/dev/ttyUSB0', { baudrate : 9600}, read);
-  client.setID(address);
-
-  function read(){
-    client.readHoldingRegisters(address, 1);
-  }
-};
-
-module.exports = new DQ1000V();
+module.exports = 
+{
+  create: Create_
+}
