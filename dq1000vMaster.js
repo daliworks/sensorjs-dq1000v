@@ -102,8 +102,8 @@ function Master (config) {
         self.config.serial.port = config.serial.port;
       }
 
-      if (config.serial.baudrate != undefined) {
-        self.config.serial.baudrate = config.serial.port;
+      if (config.serial.baudRate != undefined) {
+        self.config.serial.baudRate = config.serial.port;
       }
     }
 
@@ -122,7 +122,7 @@ function Master (config) {
 
   EventEmitter.call(self);
   self.client = new ModbusRTU();
-  self.client.connectRTUBuffered(self.config.serial.port, { baudrate: self.config.serial.baudrate });
+  self.client.connectRTUBuffered(self.config.serial.port, { baudRate: self.config.serial.baudRate });
   self.client.setID(self.config.deviceID);
   self.client.setTimeout(self.config.timeout);
   self.children = [];
@@ -139,8 +139,8 @@ util.inherits(Master, EventEmitter);
 Master.properties = {
   config : {
     serial : {
-      port : '/dev/ttyXRUSB1',
-      baudrate : 9600
+      port : '/dev/serial-port-ioioi1',
+      baudRate : 9600
     },
     interval : REGISTER_UPDATE_INTERVAL,
     deviceID : MODBUS_UNIT_ID,

@@ -25,7 +25,7 @@ function DQ1000VSensor(sensorInfo, options) {
 
   self.dataType = DQ1000VSensor.properties.dataTypes[self.model][0];
 
-   self.parent.register(self);
+  self.parent.register(self);
 }
 
 DQ1000VSensor.properties = {

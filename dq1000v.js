@@ -8,8 +8,13 @@ var EventEmitter = require('events').EventEmitter;
 var Master = require('./dq1000vMaster');
 var logger = require('./index').Sensor.getLogger('Sensor');
 
-function  TemperatureConverter(value) {
-  return  value;
+function  CalcPower(value, exponent) {
+  try {
+    return  Math.pow(value, exponent);
+  }
+  catch(e) {
+    logger.error('Invalid pow(', value, ',', exponent, ')');
+  }
 }
 
 function DQ1000V (deviceID) {
@@ -37,20 +42,21 @@ function DQ1000V (deviceID) {
   ];
 
   self.sensors = {
-    alarm:              { value: undefined, registered: false, address: 10100, type: 'readUInt16BE', converter: undefined},
-    blower:             { value: undefined, registered: false, address: 10007, type: 'readUInt16BE', converter: undefined},
-    cooling:            { value: undefined, registered: false, address: 10050, type: 'readUInt32BE', converter: undefined},
-    dehumidification:   { value: undefined, registered: false, address: 10051, type: 'readUInt32BE', converter: undefined},
-    heating:            { value: undefined, registered: false, address: 10052, type: 'readUInt16BE', converter: undefined},
-    humidification:     { value: undefined, registered: false, address: 10053, type: 'readUInt16BE', converter: undefined},
-    temperature:        { value: undefined, registered: false, address: 30001, type: 'readInt16BE',  converter: TemperatureConverter},
-    humidity:           { value: undefined, registered: false, address: 30002, type: 'readUInt16BE', converter: undefined},
-    setTemperature:     { value: undefined, registered: false, address: 40001, type: 'readInt16BE',  converter: TemperatureConverter},
-    setHumidity:        { value: undefined, registered: false, address: 40002, type: 'readUInt16BE', converter: undefined}
+    alarm:              { value: undefined, registered: false, address: 10100, type: 'readUInt16BE'},
+    blower:             { value: undefined, registered: false, address: 10007, type: 'readUInt16BE'},
+    cooling:            { value: undefined, registered: false, address: 10050, type: 'readUInt32BE'},
+    dehumidification:   { value: undefined, registered: false, address: 10051, type: 'readUInt32BE'},
+    heating:            { value: undefined, registered: false, address: 10052, type: 'readUInt16BE'},
+    humidification:     { value: undefined, registered: false, address: 10053, type: 'readUInt16BE'},
+    temperature:        { value: undefined, registered: false, address: 40001, type: 'readInt16BE',   exponent: -1},
+    humidity:           { value: undefined, registered: false, address: 40002, type: 'readUInt16BE',  exponent: -1},
+    setTemperature:     { value: undefined, registered: false, address: 30001, type: 'readInt16BE',   exponent: -1},
+    setHumidity:        { value: undefined, registered: false, address: 30002, type: 'readUInt16BE',  exponent: -1},
   };
 
   self.actuators={
-    demandReset:    { value: undefined, registered: false, address: 40120, type: 'readUInt16BE', writeType: 'writeUInt16BE', converter: undefined }  
+    run:                { value: undefined, registered: false, address: 00002, type: 'readUInt16BE', writeType: 'writeUInt16BE'}  ,
+    alarmRelease:       { value: undefined, registered: false, address: 00003, type: 'readUInt16BE', writeType: 'writeUInt16BE'}  
   };
 
   self.on('done', function (startAddress, count, data) {
@@ -69,6 +75,9 @@ function DQ1000V (deviceID) {
           var offset = (item.address - startAddress) * 2;
           if (item.converter != undefined) {
             item.value = item.converter(data.buffer[item.type](offset) || 0);
+          }
+          else if (item.exponent != undefined){
+            item.value = CalcPower((data.buffer[item.type](offset) || 0), item.exponent);
           }
           else {
             item.value = (data.buffer[item.type](offset) || 0);
