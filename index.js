@@ -4,6 +4,7 @@ var logger = require('log4js').getLogger('Sensor');
 
 function initDrivers() {
   var dq1000vSensor;
+  var dq1000vActuator;
 
   try {
     dq1000vSensor = require('./driver/dq1000vSensor');
@@ -11,8 +12,15 @@ function initDrivers() {
     logger.error('Cannot load ./driver/dq1000vSensor', e);
   }
 
+  try {
+    dq1000vActuator = require('./driver/dq1000vActuator');
+  } catch(e) {
+    logger.error('Cannot load ./driver/dq1000vActuator', e);
+  }
+
   return {
-    dq1000vSensor: dq1000vSensor
+    dq1000vSensor: dq1000vSensor,
+    dq1000vActuator: dq1000vActuator
   };
 }
 
@@ -37,6 +45,9 @@ module.exports = {
       'dq1000vState',
       'dq1000vTemperature',
       'dq1000vHumidity'
+    ],
+    dq1000vActuator: [
+      'dq1000vSwitch'
     ]
   },
   initNetworks: initNetworks,
