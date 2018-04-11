@@ -14,6 +14,12 @@ var RETRY_OPEN_INTERVAL = 3000; // 3sec
 var REGISTER_UPDATE_INTERVAL = 10000;
 var START_OF_COILS = 10001;
 var END_OF_COILS = 20000;
+var START_OF_DISCRETE = 20001;
+var END_OF_DISCRETE = 30000;
+var START_OF_HOLD_REGISTERS = 30001;
+var END_OF_HOLD_REGISTERS = 40000;
+var START_OF_INPUT_REGISTERS = 40001;
+var END_OF_INPUT_REGISTERS = 50000;
 
 // client: modbus client
 // registerAddress: register address from 40000
@@ -39,7 +45,7 @@ function readValue(task, done) {
           return done && done();
         })
         .catch( function(err) {
-          logger.error('Error:', err);
+          logger.error(err);
           if (cb) {
             cb(err);
           }
@@ -47,25 +53,8 @@ function readValue(task, done) {
           return done && done(err);
         });
     }
-    else if (30001 <= task.registerAddress && task.registerAddress <= 39999) {
-      client.readHoldingRegisters(task.registerAddress - 30001, task.registerCount)
-        .then(function (data) {
-          if (cb) {
-            cb(undefined, task.registerAddress, task.registerCount, data);
-          }
-          return done && done();
-        })
-        .catch(function(err){
-          logger.error('Error:', err);
-          if (cb) {
-            cb(err);
-          }
-
-          return done && done(err);
-        });
-    }
-    else if (40001 <= task.registerAddress && task.registerAddress <= 49999) {
-      client.readInputRegisters(task.registerAddress - 40001, task.registerCount)
+    else if (START_OF_DISCRETE <= task.registerAddress && task.registerAddress <= END_OF_DISCRETE) {
+      client.readDiscreteInputs(task.registerAddress - START_OF_DISCRETE, task.registerCount)
         .then(function( data) {
           if (cb) {
             cb(null, task.registerAddress, task.registerCount, data);
@@ -74,7 +63,40 @@ function readValue(task, done) {
           return done && done();
         })
         .catch( function(err) {
-          logger.error('Error:', err);
+          logger.error(err);
+          if (cb) {
+            cb(err);
+          }
+
+          return done && done(err);
+        });
+    }
+    else if (START_OF_HOLD_REGISTERS <= task.registerAddress && task.registerAddress <= END_OF_HOLD_REGISTERS) {
+      client.readHoldingRegisters(task.registerAddress - START_OF_HOLD_REGISTERS, task.registerCount)
+        .then(function (data) {
+          if (cb) {
+            cb(undefined, task.registerAddress, task.registerCount, data);
+          }
+          return done && done();
+        })
+        .catch(function(err){
+          if (cb) {
+            cb(err);
+          }
+
+          return done && done(err);
+        });
+    }
+    else if (START_OF_INPUT_REGISTERS <= task.registerAddress && task.registerAddress <= END_OF_INPUT_REGISTERS) {
+      client.readInputRegisters(task.registerAddress - START_OF_INPUT_REGISTERS, task.registerCount)
+        .then(function( data) {
+          if (cb) {
+            cb(null, task.registerAddress, task.registerCount, data);
+          }
+
+          return done && done();
+        })
+        .catch( function(err) {
           if (cb) {
             cb(err);
           }
@@ -87,10 +109,67 @@ function readValue(task, done) {
     }
   }
   catch (err) {
-    logger.error('Error : ', err);
+    logger.error(err);
   }
 }
 
+function writeValue(task, done) {
+  var client = task.client;
+  var cb = task.writeCb;
+  var address;
+
+  try {
+    if (START_OF_COILS <= task.registerAddress && task.registerAddress <= END_OF_COILS) {
+      client.writeCoil(task.registerAddress - START_OF_COILS, task.value)
+        .then(function( data) {
+          if (cb) {
+            cb();
+          }
+
+          return done && done();
+        })
+        .catch( function(err) {
+          if (cb) {
+            cb(err);
+          }
+
+          return done && done(err);
+        });
+    }
+    else if (START_OF_HOLD_REGISTERS <= task.registerAddress && task.registerAddress <= END_OF_HOLD_REGISTERS) {
+      logger.info('writeRegister(', task.registerAddress - START_OF_HOLD_REGISTERS, task.value, ')');
+      client.writeRegister(task.registerAddress - START_OF_HOLD_REGISTERS, task.value)
+        .then(function (data) {
+          if (cb) {
+            cb();
+          }
+          return done && done();
+        })
+        .catch(function(err){
+          if (cb) {
+            cb(err);
+          }
+
+          return done && done(err);
+        });
+    }
+    else {
+      return done('Invalid address : ', task.registerAddress);
+    }
+  }
+  catch (err) {
+    logger.error(err);
+  }
+}
+
+function queryProcess(task, done) {
+  if (task.op == 'read') {
+    return  readValue(task, done);
+  }
+  else if (task.op == 'write') {
+    return  writeValue(task, done);
+  }
+}
 function Master (config) {
   var self = this;
 
@@ -126,8 +205,8 @@ function Master (config) {
   self.client.setID(self.config.deviceID);
   self.client.setTimeout(self.config.timeout);
   self.children = [];
-  self.readQueue = async.queue(readValue);
-  self.readQueue.drain = function () {
+  self.queryQueue = async.queue(queryProcess);
+  self.queryQueue.drain = function () {
     logger.debug('All the read tasks have been done.');
   };
 
@@ -181,6 +260,7 @@ Master.prototype.run = function() {
 
         for (i = 0; i < child.addressSet.length; i++) {
           var callArgs = {
+            op : 'read',
             client: self.client,
             registerAddress: child.addressSet[i].address,
             registerCount: child.addressSet[i].count,
@@ -188,12 +268,15 @@ Master.prototype.run = function() {
               if (err == undefined) {
                 child.emit('done', address, count, registers)
               }
+              else {
+                child.emit('error', address, count, registers)
+              }
             }
           };
 
-          self.readQueue.push(callArgs, function pushCb(err) {
+          self.queryQueue.push(callArgs, function pushCb(err) {
             if (err) {
-              logger.error('pushCB error: ', err);
+                child.emit('error', callArgs.registerAddress, callArgs.registerCount)
             }
           });
         }
@@ -215,6 +298,24 @@ Master.prototype.getValue = function (field) {
   }
 
   return  undefined;
+}
+
+Master.prototype.setValue = function(address, value, cb) {
+  var self = this;
+
+  var callArgs = {
+    op : 'write',
+    client: self.client,
+    registerAddress: address,
+    value: value,
+    writeCb: cb
+  };
+
+  self.queryQueue.push(callArgs, function pushCb(err) {
+    if (err) {
+      logger.error('pushCB error: ', err);
+    }
+  });
 }
 
 module.exports = new Master();

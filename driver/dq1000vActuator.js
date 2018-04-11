@@ -6,7 +6,7 @@ var SensorLib = require('../index');
 var Actuator = SensorLib.Actuator;
 var _ = require('lodash');
 var logger = Actuator.getLogger();
-var dq1000v = require('../dq1000v');
+var DQ1000V = require('../dq1000v');
 
 function DQ1000VActuator(sensorInfo, options) {
   var self = this;
@@ -16,8 +16,11 @@ function DQ1000VActuator(sensorInfo, options) {
   self.field = self.id.split('-')[2];
   self.deviceID = self.id.split('-')[1];
   self.lastTime = 0;
-  
-  if (sensorInfo.model) {
+  self.myStatus = 'on'; 
+
+  self.parent = DQ1000V.create(self.deviceID);
+
+ if (sensorInfo.model) {
     self.model = sensorInfo.model;
   }
 
@@ -29,52 +32,62 @@ function DQ1000VActuator(sensorInfo, options) {
 DQ1000VActuator.properties = {
   supportedNetworks: ['dq1000v-modbus-rtu'],
   dataTypes: {
-    dq1000vSwitch: ['powerSwitch']
+    dq1000vSwitch: ['powerSwitch'],
+    dq1000vTemperatureController: ['stringActuator'],
+    dq1000vHumidityController: ['stringActuator']
   },
   models: [
-    'dq1000vSwitch'
+    'dq1000vSwitch',
+    'dq1000vTemperatureController',
+    'dq1000vHumidityController'
   ],
   commands: {
-    dq1000vSwitch: [ 'on', 'off' ]
+    dq1000vSwitch: [ 'on', 'off' ],
+    dq1000vTemperatureController: [ 'send' ],
+    dq1000vHumidityController: [ 'send' ]
   },
   discoverable: false,
   addressable: true,
-  recommendedInterval: 60000,
-  maxInstances: 99,
-  maxRetries: 8,
+  //recommendedInterval: 60000,
+  //maxInstances: 99,
+  //maxRetries: 8,
   idTemplate: '{gatewayId}-{deviceAddress}-{sequence}',
   category: 'actuator'
 };
 
 util.inherits(DQ1000VActuator, Actuator);
 
-function sendCommand(actuator, cmd, options, cb) {
-  if (_.isFunction(options)) {
-    cb = options;
-    options = null;
-  }
-
-  logger.trace('sendCommand : ', actuator.deviceAddress, actuator.field, cmd, options);
- 
-  try {
-    var settings = JSON.parse(options.settings);
-    logger.trace('Settings : ', settings);
-
-    cb(undefined, 'Success!');
-  }
-  catch(err) {
-    cb('Invalid JSON format', err);
-  }
-}
-
 DQ1000VActuator.prototype._set = function (cmd, options, cb) {
   var self = this;
 
+  logger.trace('_set(', cmd, options, ')');
   try{
-    if (options.settings != undefined) {
-      var settings = JSON.parse(options.settings);
-      self.master.emit(self.deviceAddress + '-' + self.field, settings);
+    var value;
+    var index = _.find(DQ1000VActuator.properties.commands[self.model], cmd);
+    if (index < 0) {
+      return cb && cb('Invalid command');
     }
+
+    switch(cmd) {
+    case 'on': 
+    case 'off': 
+      if (options.settings != undefined) {
+        value = JSON.parse(options.settings);
+        logger.trace('vlaue = ', value);
+      }
+      break;
+
+    case 'send': 
+      if (options.text != undefined) {
+        value = Math.trunc(parseFloat(options.text) * 10);
+        logger.trace('vlaue = ', value);
+      }
+      break;
+    }
+
+    self.parent.emit(self.field, cmd, value, function(err) {
+      return cb && cb(err, 'Success!');
+    });
   }
   catch(err) {
     return cb && cb(err);
@@ -84,34 +97,23 @@ DQ1000VActuator.prototype._set = function (cmd, options, cb) {
 
 DQ1000VActuator.prototype._get = function (cmd, options, cb) {
   var self = this;
-  
-  sendCommand(self.shortId, cmd, options, function (err, result) {
-    if(err) {
-      self.myStatus = 'err';
-    } else {
-      self.myStatus = 'on';
-    }
-    return cb && cb(err, result);
-  });
+  var result = {
+    status: 'on',
+    id: self.id,
+    result: {},
+    time: {}
+  };
+
+  result.result[self.type] = self.parent.getValue(self);
+
+  logger.info('Called _get():', result);
+
+  self.emit('data', result);
 };
 
 DQ1000VActuator.prototype.getStatus = function () {
-  return this.myStatus;
-};
-
-DQ1000VActuator.prototype.connectListener = function () {
-  this.myStatus = 'on';
-};
-
-DQ1000VActuator.prototype.disconnectListener = function () {
-  var rtn = {
-    status: 'off',
-    id: this.id,
-    message: 'disconnected'
-  };
-
-  this.myStatus = 'off';
-  this.emit('data', rtn);
+  var self = this;
+  return self.myStatus;
 };
 
 module.exports = DQ1000VActuator;

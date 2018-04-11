@@ -47,7 +47,9 @@ module.exports = {
       'dq1000vHumidity'
     ],
     dq1000vActuator: [
-      'dq1000vSwitch'
+      'dq1000vSwitch',
+      'dq1000vTemperatureController',
+      'dq1000vHumidityController'
     ]
   },
   initNetworks: initNetworks,
