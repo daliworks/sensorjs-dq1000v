@@ -15,6 +15,7 @@ function DQ1000VActuator(sensorInfo, options) {
 
   self.field = self.id.split('-')[2];
   self.deviceID = self.id.split('-')[1];
+  self.gatewayID = self.id.split('-')[0];
   self.lastTime = 0;
   self.myStatus = 'on'; 
 
@@ -70,11 +71,10 @@ DQ1000VActuator.prototype._set = function (cmd, options, cb) {
 
     switch(cmd) {
     case 'on': 
+      value = true;
+      break;
     case 'off': 
-      if (options.settings != undefined) {
-        value = JSON.parse(options.settings);
-        logger.trace('vlaue = ', value);
-      }
+      value = false;
       break;
 
     case 'send': 
@@ -85,7 +85,7 @@ DQ1000VActuator.prototype._set = function (cmd, options, cb) {
       break;
     }
 
-    self.parent.emit(self.field, cmd, value, function(err) {
+    self.parent.emit(self.field, value, function(err) {
       return cb && cb(err, 'Success!');
     });
   }

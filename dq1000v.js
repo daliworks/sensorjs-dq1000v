@@ -46,24 +46,24 @@ function DQ1000V (deviceID) {
   ];
 
   self.sensors = {
-    run:                { value: undefined, registered: false, address: 10002, type: 'readUInt16BE', retryCount: 0},
-    alarm:              { value: undefined, registered: false, address: 20100, type: 'readUInt16BE', retryCount: 0},
-    blower:             { value: undefined, registered: false, address: 20007, type: 'readUInt16BE', retryCount: 0},
-    cooling:            { value: undefined, registered: false, address: 20050, type: 'readUInt32BE', retryCount: 0},
-    dehumidification:   { value: undefined, registered: false, address: 20051, type: 'readUInt32BE', retryCount: 0},
-    heating:            { value: undefined, registered: false, address: 20052, type: 'readUInt16BE', retryCount: 0},
-    humidification:     { value: undefined, registered: false, address: 20053, type: 'readUInt16BE', retryCount: 0},
-    temperature:        { value: undefined, registered: false, address: 40001, type: 'readInt16BE',   exponent: 0.1, retryCount: 0},
-    humidity:           { value: undefined, registered: false, address: 40002, type: 'readUInt16BE',  exponent: 0.1, retryCount: 0},
-    settingTemperature: { value: undefined, registered: false, address: 30001, type: 'readInt16BE',   exponent: 0.1, retryCount: 0},
-    settingHumidity:    { value: undefined, registered: false, address: 30002, type: 'readUInt16BE',  exponent: 0.1, retryCount: 0},
+    run:                { endpoint: undefined, value: undefined, registered: false, address: 10002, type: 'readUInt16BE', retryCount: 0},
+    alarm:              { endpoint: undefined, value: undefined, registered: false, address: 20100, type: 'readUInt16BE', retryCount: 0},
+    blower:             { endpoint: undefined, value: undefined, registered: false, address: 20007, type: 'readUInt16BE', retryCount: 0},
+    cooling:            { endpoint: undefined, value: undefined, registered: false, address: 20050, type: 'readUInt32BE', retryCount: 0},
+    dehumidification:   { endpoint: undefined, value: undefined, registered: false, address: 20051, type: 'readUInt32BE', retryCount: 0},
+    heating:            { endpoint: undefined, value: undefined, registered: false, address: 20052, type: 'readUInt16BE', retryCount: 0},
+    humidification:     { endpoint: undefined, value: undefined, registered: false, address: 20053, type: 'readUInt16BE', retryCount: 0},
+    temperature:        { endpoint: undefined, value: undefined, registered: false, address: 40001, type: 'readInt16BE',   exponent: 0.1, retryCount: 0},
+    humidity:           { endpoint: undefined, value: undefined, registered: false, address: 40002, type: 'readUInt16BE',  exponent: 0.1, retryCount: 0},
+    settingTemperature: { endpoint: undefined, value: undefined, registered: false, address: 30001, type: 'readInt16BE',   exponent: 0.1, retryCount: 0},
+    settingHumidity:    { endpoint: undefined, value: undefined, registered: false, address: 30002, type: 'readUInt16BE',  exponent: 0.1, retryCount: 0},
   };
 
   self.actuators={
-    operation:          { value: undefined, registered: false, address: 10002, type: 'readUInt16BE', writeType: 'writeUInt16BE', retryCount: 0},
-    alarmRelease:       { value: undefined, registered: false, address: 10003, type: 'readUInt16BE', writeType: 'writeUInt16BE', retryCount: 0},
-    temperatureControl: { value: undefined, registered: false, address: 30001, type: 'readInt16BE',  writeType: 'writeInt16BE', retryCount: 0},
-    humidityControl:    { value: undefined, registered: false, address: 30002, type: 'readUInt16BE', writeType: 'writeUInt16BE', retryCount: 0},
+    operation:          { endpoint: undefined, value: undefined, registered: false, address: 10002, type: 'readUInt16BE', writeType: 'writeUInt16BE', retryCount: 0},
+    alarmRelease:       { endpoint: undefined, value: undefined, registered: false, address: 10003, type: 'readUInt16BE', writeType: 'writeUInt16BE', retryCount: 0},
+    temperatureControl: { endpoint: undefined, value: undefined, registered: false, address: 30001, type: 'readInt16BE',  writeType: 'writeInt16BE', retryCount: 0},
+    humidityControl:    { endpoint: undefined, value: undefined, registered: false, address: 30002, type: 'readUInt16BE', writeType: 'writeUInt16BE', retryCount: 0},
   };
 
   self.on('done', function (startAddress, count, data) {
@@ -71,11 +71,30 @@ function DQ1000V (deviceID) {
       if (startAddress < 30000) {
         if (startAddress <= item.address && item.address < startAddress + count) {
           var offset = (item.address - startAddress);
+          var value;
           if (data.data[offset] == true) {
-            item.value = 'on';
+            value = 1;
           }
           else {
-            item.value = 'off';
+            value = 0;
+          }
+
+
+          if (item.value != value) {
+            if ((item.endpoint.onChange != undefined) && (item.endpoint.onChange == true)) {
+              var result = {
+                status: 'on',
+                id: item.endpoint.id,
+                result: {},
+                time: {}
+              };
+
+              result.result[item.endpoint.dataType] = value;
+              result.time[item.endpoint.dataType] = _.now();
+
+              item.endpoint.emit('change', result);
+            }
+            item.value = value;
           }
           item.retryCount = 0;
         }
@@ -83,15 +102,18 @@ function DQ1000V (deviceID) {
       else {
         if (startAddress <= item.address && item.address < startAddress + count * 2) {
           var offset = (item.address - startAddress) * 2;
+          var value;
+
           if (item.converter != undefined) {
-            item.value = item.converter(data.buffer[item.type](offset) || 0);
+            value = item.converter(data.buffer[item.type](offset) || 0);
           }
           else if (item.exponent != undefined){
-            item.value = CalcPower((data.buffer[item.type](offset) || 0), item.exponent);
+            value = CalcPower((data.buffer[item.type](offset) || 0), item.exponent);
           }
           else {
-            item.value = (data.buffer[item.type](offset) || 0);
+            value = (data.buffer[item.type](offset) || 0);
           }
+          item.value = value;
           item.retryCount = 0;
         }
       }
@@ -144,10 +166,10 @@ function DQ1000V (deviceID) {
     setError(self.actuators.alarmRelease);
   });
 
-  function SetValue(field, cmd, value, cb) {
+  function SetValue(field, value, cb) {
     if (self.actuators[field] != undefined) {
       if ((value == undefined) || (cb == undefined)) {
-        logger.error('Invalid arguments(', cmd, value, cb, ')');
+        logger.error('Invalid arguments(', value, cb, ')');
       }
       else {
         self.parent.setValue(self.actuators[field].address, value, cb);
@@ -155,20 +177,20 @@ function DQ1000V (deviceID) {
     }
   }
 
-  self.on('temperatureControl', function (cmd, value, cb) {
-    SetValue('temperatureControl', cmd, value, cb);
+  self.on('temperatureControl', function (value, cb) {
+    SetValue('temperatureControl', value, cb);
   });
 
-  self.on('humidityControl', function (cmd, value, cb) {
-    SetValue('humidityControl', cmd, value, cb);
+  self.on('humidityControl', function (value, cb) {
+    SetValue('humidityControl', value, cb);
   });
 
-  self.on('operation', function (cmd, value, cb) {
-    SetValue('operation', cmd, value, cb);
+  self.on('operation', function (value, cb) {
+    SetValue('operation', value, cb);
   });
 
-  self.on('alarmRelease', function (cmd, value, cb) {
-    SetValue('alarmRelase', cmd, value, cb);
+  self.on('alarmRelease', function (value, cb) {
+    SetValue('alarmRelase', value, cb);
   });
 }
 
@@ -190,10 +212,12 @@ DQ1000V.prototype.register = function(endpoint) {
 
   if (self.sensors[endpoint.field] != undefined) {
     self.sensors[endpoint.field].registered = true;
+    self.sensors[endpoint.field].endpoint = endpoint;
     self.parent.run();
   }
   else if (self.actuators[endpoint.field] != undefined) {
     self.actuators[endpoint.field].registered = true;
+    self.actuators[endpoint.field].endpoint = endpoint;
 
     endpoint.emit('connect');
   }

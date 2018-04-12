@@ -24,7 +24,7 @@ function DQ1000VSensor(sensorInfo, options) {
   }
 
   self.dataType = DQ1000VSensor.properties.dataTypes[self.model][0];
-
+  self.onChange = DQ1000VSensor.properties.onChange[self.model];
   self.parent.register(self);
 }
 
@@ -34,6 +34,11 @@ DQ1000VSensor.properties = {
     'dq1000vTemperature': ['temperature'],
     'dq1000vHumidity': ['humidity'],
     'dq1000vState': ['onoff']
+  },
+  onChange: {
+    dq1000vState: true,
+    dq1000vTemperature: false,
+    dq1000vHumidity: false
   },
   discoverable: false,
   addressable: true,

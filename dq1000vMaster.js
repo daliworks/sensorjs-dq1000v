@@ -63,7 +63,6 @@ function readValue(task, done) {
           return done && done();
         })
         .catch( function(err) {
-          logger.error(err);
           if (cb) {
             cb(err);
           }
